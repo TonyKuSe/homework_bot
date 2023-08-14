@@ -6,10 +6,10 @@ import logging
 
 from dotenv import load_dotenv
 
-from exceptions import ResponseNot200
+from exceptions import GetApiNot200
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     filename='homework.log',
     format='%(asctime)s, %(levelname)s, %(name)s, %(message)s')
 
@@ -36,13 +36,13 @@ def check_tokens():
     Которые необходимы для работы программы.
     """
     if PRACTICUM_TOKEN is None:
-        logging.critical('bug')
+        logging.critical('Недоступны данные для подключения яндекс практикума')
         raise SystemExit
     elif TELEGRAM_TOKEN is None:
-        logging.critical('bug')
+        logging.critical('Недоступны данные для подключения телеграм')
         raise SystemExit
     elif TELEGRAM_CHAT_ID is None:
-        logging.critical('bug')
+        logging.critical('Недоступны данные для подключения к чату')
         raise SystemExit
 
 
@@ -50,9 +50,10 @@ def send_message(bot, message):
     """Функция отправляет сообщение в Telegram чат."""
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
-        logging.debug('ok')
-    except Exception:
-        logging.error('bug')
+        logging.debug('Сообщение отправленно')
+    except Exception as error:
+        message = f'Сбой в работе программы: {error}'
+        logging.error(f'Сбой отправки сообщения. {error}')
 
 
 def get_api_answer(timestamp):
@@ -63,13 +64,15 @@ def get_api_answer(timestamp):
             return print('error - ENDPOINTE = None')
         url = ENDPOINT
     except Exception as error:
+        message = f'Сбой в работе программы: {error}'
         print(error)
         logging.error(error)
     payload = {'from_date': timestamp}
     try:
         homework_statuses = requests.get(url, headers=HEADERS, params=payload)
         if homework_statuses.status_code != 200:
-            raise ResponseNot200('Not 200')
+            raise GetApiNot200(
+                f'Ошибка статус ответа {homework_statuses.status_code}')
         response = homework_statuses.json()
     except requests.exceptions.RequestException as error:
         print(error)
@@ -114,11 +117,15 @@ def main():
     try:
         bot = telegram.Bot(token=TELEGRAM_TOKEN)
         timestamp = int(time.time())
-    except Exception:
+    except Exception as error:
+        message = f'Сбой в работе программы: {error}'
         raise SystemExit
     if bot is None:
+        logging.critical('Нет данных бота')
+        message = (f'Сбой в работе программы: Нет данных бота')
         raise SystemExit
     elif timestamp is None:
+        message = (f'Сбой в работе программы: Нет данных времени')
         raise SystemExit
     while True:
         try:

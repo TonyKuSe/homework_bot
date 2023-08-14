@@ -1,2 +1,2 @@
-class ResponseNot200(Exception):
+class GetApiNot200(Exception):
     pass
