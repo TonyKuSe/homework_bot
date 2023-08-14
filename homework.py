@@ -65,8 +65,8 @@ def get_api_answer(timestamp):
         url = ENDPOINT
     except Exception as error:
         message = f'Сбой в работе программы: {error}'
-        print(error)
         logging.error(error)
+        return message
     payload = {'from_date': timestamp}
     try:
         homework_statuses = requests.get(url, headers=HEADERS, params=payload)
@@ -121,11 +121,11 @@ def main():
         message = f'Сбой в работе программы: {error}'
         raise SystemExit
     if bot is None:
+        message = 'Сбой в работе программы: Нет данных бота'
         logging.critical('Нет данных бота')
-        message = (f'Сбой в работе программы: Нет данных бота')
         raise SystemExit
     elif timestamp is None:
-        message = (f'Сбой в работе программы: Нет данных времени')
+        message = 'Сбой в работе программы: Нет данных времени'
         raise SystemExit
     while True:
         try:
