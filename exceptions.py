@@ -1,2 +1,11 @@
-class GetApiNot200(Exception):
+class GetApiNot200Error(Exception):
+    pass
+
+class NotTokenIdError(Exception):
+    pass
+
+class CodeNot200Error(Exception):
+    pass
+
+class KeyNoneError(Exception):
     pass

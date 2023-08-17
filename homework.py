@@ -1,17 +1,16 @@
+import logging
 import os
-import telegram
 import requests
 import time
-import logging
 
+import telegram
 from dotenv import load_dotenv
+from http import HTTPStatus
 
-from exceptions import GetApiNot200
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    filename='homework.log',
-    format='%(asctime)s, %(levelname)s, %(name)s, %(message)s')
+from exceptions import (
+    CodeNot200Error, GetApiNot200Error, KeyNoneError,
+    NotTokenIdError
+)
 
 load_dotenv()
 
@@ -35,33 +34,30 @@ def check_tokens():
     """Функция проверяет доступность переменных окружения.
     Которые необходимы для работы программы.
     """
-    if PRACTICUM_TOKEN is None:
-        logging.critical('Недоступны данные для подключения яндекс практикума')
-        raise SystemExit
-    elif TELEGRAM_TOKEN is None:
-        logging.critical('Недоступны данные для подключения телеграм')
-        raise SystemExit
-    elif TELEGRAM_CHAT_ID is None:
-        logging.critical('Недоступны данные для подключения к чату')
-        raise SystemExit
+    check_list = (
+        (PRACTICUM_TOKEN, 'подключения телеграм'),
+        (TELEGRAM_TOKEN, 'подключения телеграм'),
+        (TELEGRAM_CHAT_ID, 'подключения к чату'),
+    )
+    for token, error_str in check_list:
+        if token is None:
+            logging.critical(f'Недоступны данные для {error_str}')
+            raise NotTokenIdError
 
 
 def send_message(bot, message):
     """Функция отправляет сообщение в Telegram чат."""
     try:
+        logging.debug('Сообщение отправленно')
         bot.send_message(TELEGRAM_CHAT_ID, message)
         logging.debug('Сообщение отправленно')
-    except Exception as error:
-        message = f'Сбой в работе программы: {error}'
+    except telegram.error.TelegramError as error:
         logging.error(f'Сбой отправки сообщения. {error}')
 
 
 def get_api_answer(timestamp):
     """Функция делает запрос к  эндпоинту API-сервиса."""
     try:
-        if ENDPOINT is None:
-            logging.error('error - ENDPOINTE = None')
-            return print('error - ENDPOINTE = None')
         url = ENDPOINT
     except Exception as error:
         message = f'Сбой в работе программы: {error}'
@@ -70,53 +66,51 @@ def get_api_answer(timestamp):
     payload = {'from_date': timestamp}
     try:
         homework_statuses = requests.get(url, headers=HEADERS, params=payload)
-        if homework_statuses.status_code != 200:
-            raise GetApiNot200(
+        if homework_statuses.status_code != HTTPStatus.OK:
+            raise GetApiNot200Error(
                 f'Ошибка статус ответа {homework_statuses.status_code}')
         response = homework_statuses.json()
     except requests.exceptions.RequestException as error:
-        print(error)
+        raise CodeNot200Error(error)
     else:
         return response
 
 
 def check_response(response):
     """Функция проверяет ответ API на соответствие документации."""
-    try:
-        homeworks = response['homeworks']
-        return homeworks[round(len(homeworks) - 1)]
-    except KeyError('homeworks') as error:
-        print(error)
-        logging.error(error)
-    except TypeError('homeworks') as error:
-        print(error)
-    except IndexError('homeworks') as error:
-        print(error)
-    except Exception as error:
-        print(error)
-        logging.error(error)
+    logging.debug('Start check')
+    if not isinstance(response, dict):
+        raise TypeError
+    if 'homeworks' not in response:
+        raise KeyNoneError('KeyNone homeworks')
+    homeworks = response.get('homeworks')
+    if not isinstance(homeworks, list):
+        raise TypeError
+    return homeworks[round(len(homeworks) - len(homeworks))]
 
 
 def parse_status(homework):
-    """Функция извлекает из информации.
+    """Функция извлекает информации.
     О конкретной домашней работе статус этой работы.
     """
-    try:
-        homework_name = homework['homework_name']
-        verdict = HOMEWORK_VERDICTS[homework['status']]
-    except TypeError('status') as error:
-        message = error
-        logging.error(error)
-        return message
+    if 'homework_name' not in homework:
+        raise KeyNoneError('KeyNone homework_name')
+    homework_name = homework.get('homework_name')
+    if 'status' not in homework:
+        raise KeyNoneError('KeyNone status')
+    if homework['status'] not in HOMEWORK_VERDICTS:
+        raise KeyNoneError('KeyNone status in HOMEWORK_VERDICTS')
+    verdict = HOMEWORK_VERDICTS[homework['status']]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def main():
     """Основная логика работы бота."""
     check_tokens()
+    message_retro = ''
     try:
         bot = telegram.Bot(token=TELEGRAM_TOKEN)
-        timestamp = int(time.time())
+        timestamp = int(0)
     except Exception as error:
         message = f'Сбой в работе программы: {error}'
         raise SystemExit
@@ -129,12 +123,14 @@ def main():
         raise SystemExit
     while True:
         try:
-            check_tokens()
             response = get_api_answer(timestamp)
+            timestamp = response.get('current_date', int(time.time()))
             homework = check_response(response)
             message = parse_status(homework)
+            if message == message_retro:
+                continue
             send_message(bot, message)
-
+            message_retro = message
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
 
@@ -143,4 +139,7 @@ def main():
 
 
 if __name__ == '__main__':
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s, %(levelname)s, %(name)s, %(message)s')
     main()
