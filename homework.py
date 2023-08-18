@@ -1,15 +1,15 @@
 import logging
 import os
-import requests
 import time
+from http import HTTPStatus
 
+import requests
 import telegram
 from dotenv import load_dotenv
-from http import HTTPStatus
 
 from exceptions import (
     CodeNot200Error, GetApiNot200Error, KeyNoneError,
-    NotTokenIdError
+    NotTokenIdError, HomeworkNoneError
 )
 
 load_dotenv()
@@ -22,6 +22,7 @@ RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
+HANDLER = logging.StreamHandler
 
 HOMEWORK_VERDICTS = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
@@ -42,7 +43,7 @@ def check_tokens():
     for token, error_str in check_list:
         if token is None:
             logging.critical(f'Недоступны данные для {error_str}')
-            raise NotTokenIdError
+            raise NotTokenIdError(f'Недоступны данные для {error_str}')
 
 
 def send_message(bot, message):
@@ -57,12 +58,7 @@ def send_message(bot, message):
 
 def get_api_answer(timestamp):
     """Функция делает запрос к  эндпоинту API-сервиса."""
-    try:
-        url = ENDPOINT
-    except Exception as error:
-        message = f'Сбой в работе программы: {error}'
-        logging.error(error)
-        return message
+    url = ENDPOINT
     payload = {'from_date': timestamp}
     try:
         homework_statuses = requests.get(url, headers=HEADERS, params=payload)
@@ -80,13 +76,13 @@ def check_response(response):
     """Функция проверяет ответ API на соответствие документации."""
     logging.debug('Start check')
     if not isinstance(response, dict):
-        raise TypeError
+        raise TypeError('Response not dict')
     if 'homeworks' not in response:
         raise KeyNoneError('KeyNone homeworks')
     homeworks = response.get('homeworks')
     if not isinstance(homeworks, list):
-        raise TypeError
-    return homeworks[round(len(homeworks) - len(homeworks))]
+        raise TypeError('Homeworks not list')
+    return homeworks
 
 
 def parse_status(homework):
@@ -108,32 +104,26 @@ def main():
     """Основная логика работы бота."""
     check_tokens()
     message_retro = ''
-    try:
-        bot = telegram.Bot(token=TELEGRAM_TOKEN)
-        timestamp = int(0)
-    except Exception as error:
-        message = f'Сбой в работе программы: {error}'
-        raise SystemExit
-    if bot is None:
-        message = 'Сбой в работе программы: Нет данных бота'
-        logging.critical('Нет данных бота')
-        raise SystemExit
-    elif timestamp is None:
-        message = 'Сбой в работе программы: Нет данных времени'
-        raise SystemExit
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    timestamp = int(0)
     while True:
         try:
             response = get_api_answer(timestamp)
-            timestamp = response.get('current_date', int(time.time()))
-            homework = check_response(response)
-            message = parse_status(homework)
-            if message == message_retro:
-                continue
-            send_message(bot, message)
-            message_retro = message
+            if response is None:
+                logging.error()
+                raise
+            timestamp = response.get('current_date', timestamp)
+            homeworks = check_response(response)
+            if homeworks is None:
+                logging.error('homework is None')
+                raise HomeworkNoneError('homework is None')
+            message = parse_status(homeworks[0])
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-
+        else:
+            if message_retro != message:
+                send_message(bot, message)
+                message_retro = message
         finally:
             time.sleep(RETRY_PERIOD)
 
@@ -142,4 +132,6 @@ if __name__ == '__main__':
     logging.basicConfig(
         level=logging.DEBUG,
         format='%(asctime)s, %(levelname)s, %(name)s, %(message)s')
+    logger = logging.getLogger(__name__)
+    logger.addHandler(HANDLER)
     main()

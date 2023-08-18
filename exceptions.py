@@ -9,3 +9,6 @@ class CodeNot200Error(Exception):
 
 class KeyNoneError(Exception):
     pass
+
+class HomeworkNoneError(Exception):
+    pass
